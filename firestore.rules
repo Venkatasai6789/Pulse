@@ -1,0 +1,596 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid} (Matches Firebase Auth UID)
+    // Fields:
+    //   - name: string (required, 1-100 chars)
+    //   - email: string (required, valid email, <= 100 chars)
+    //   - photoUrl: string (optional/nullable, <= 2000 chars)
+    //   - organisation: string (optional/nullable, <= 100 chars)
+    //   - orgType: string (optional/nullable, <= 50 chars)
+    //   - id: string (optional, if present must equal uid)
+    //   - createdAt: timestamp (optional, immutable)
+    //
+    // Collection: locations
+    // Document ID: {id}
+    // Fields:
+    //   - id: string (optional, <= 128 chars)
+    //   - ownerUid: string (required, immutable, auth UID)
+    //   - name: string (required, 1-200 chars)
+    //   - type: string (required, 1-100 chars)
+    //   - address: string (required, 1-300 chars)
+    //   - lat: number (optional/nullable)
+    //   - lng: number (optional/nullable)
+    //   - latitude: number (optional/nullable)
+    //   - longitude: number (optional/nullable)
+    //   - description: string (optional/nullable, <= 2000 chars)
+    //   - photoPaths: list (optional, <= 20 strings)
+    //   - managedBy: string (optional/nullable, <= 50 chars)
+    //   - organisationName: string (optional/nullable, <= 100 chars)
+    //   - coverThumb: string (optional/nullable, <= 600000 chars)
+    //   - createdAt: timestamp (optional, immutable)
+    //   - latestPhi: number (optional/nullable, 0-100)
+    //   - latestTier: string (optional/nullable, <= 50 chars)
+    //   - latestAssessmentAt: timestamp (optional/nullable)
+    //   - sensorNodeId: string (optional/nullable, <= 128 chars)
+    //   - lastAssessedAt: timestamp (optional/nullable)
+    //
+    // Collection: assessments
+    // Document ID: {id}
+    // Fields:
+    //   - id: string (optional, <= 128 chars)
+    //   - ownerUid: string (required, immutable, auth UID)
+    //   - locationId: string (optional/nullable, <= 128 chars)
+    //   - status: string (required, 'draft' or 'submitted')
+    //   - scoringVersion: string (optional/nullable, <= 50 chars)
+    //   - activity: map (optional)
+    //   - habitat: map (optional)
+    //   - environment: map (optional)
+    //   - risk: map (optional)
+    //   - visits: int (optional/nullable, 0-1000)
+    //   - observedAt: timestamp (optional/nullable)
+    //   - durationMinutes: int (optional/nullable, 0-240)
+    //   - weather: string (optional/nullable, <= 50 chars)
+    //   - flowers: string (optional/nullable, <= 50 chars)
+    //   - nesting: string (optional/nullable, <= 50 chars)
+    //   - shelter: string (optional/nullable, <= 50 chars)
+    //   - water: string (optional/nullable, <= 50 chars)
+    //   - temperatureC: number (optional/nullable, -60 to 80)
+    //   - humidityPct: number (optional/nullable, 0 to 100)
+    //   - co2Ppm: number (optional/nullable, 0 to 20000)
+    //   - riskIndicators: map (optional)
+    //   - riskLevel: string (optional/nullable, <= 50 chars)
+    //   - riskDescription: string (optional/nullable, <= 2000 chars)
+    //   - riskObservedAt: timestamp (optional/nullable)
+    //   - riskNotes: string (optional/nullable, <= 2000 chars)
+    //   - activityPhotoPaths: list (optional, <= 20 strings)
+    //   - activityPhotoPath: string (optional/nullable, <= 500 chars)
+    //   - riskPhotoPaths: list (optional, <= 20 strings)
+    //   - createdAt: timestamp (optional, immutable)
+    //   - submittedAt: timestamp (optional/nullable)
+    //   - result: map (optional/nullable)
+    //   - ai: map (optional/nullable)
+    //   - actionsTaken: list of maps (optional, <= 50 items)
+    //   - soil: map (optional/nullable)
+    //
+    // Sub-collection: assessments/{id}/photos/{p}
+    //   - kind: string (required, 'activity' or 'risk')
+    //   - thumbB64: string (optional, <= 600000 chars)
+    //   - width: int (optional, 0-4096)
+    //   - height: int (optional, 0-4096)
+    //   - takenAt: timestamp (optional)
+    //   - storagePath: string (optional/nullable, <= 500 chars)
+    //
+    // Sub-collection: assessments/{id}/actions/{a}
+    //   - note: string (required, 1-1000 chars)
+    //   - date: timestamp (optional/nullable)
+    //   - createdAt: timestamp (optional)
+    //
+    // Collection: posts
+    // Document ID: {id}
+    // Fields:
+    //   - id: string (optional, <= 128 chars)
+    //   - authorUid: string (required, immutable, auth UID)
+    //   - authorName: string (required, 1-100 chars)
+    //   - authorType: string (optional, <= 50 chars)
+    //   - category: string (required, <= 50 chars)
+    //   - title: string (required, 1-200 chars)
+    //   - body: string (required, <= 5000 chars)
+    //   - thumbB64: string (optional/nullable, <= 600000 chars)
+    //   - imagePath: string (optional/nullable, <= 500 chars)
+    //   - eventDate: timestamp (optional/nullable)
+    //   - eventTime: string (optional/nullable, <= 100 chars)
+    //   - eventPlace: string (optional/nullable, <= 200 chars)
+    //   - likeCount: int (optional, >= 0)
+    //   - commentCount: int (optional, >= 0)
+    //   - likes: int (optional, >= 0)
+    //   - comments: int (optional, >= 0)
+    //   - hidden: bool (optional)
+    //   - createdAt: timestamp (optional, immutable)
+    //
+    // Sub-collection: posts/{id}/likes/{uid}
+    //   - createdAt: timestamp (optional)
+    //
+    // Sub-collection: posts/{id}/reports/{uid}
+    //   - reason: string (required, 1-500 chars)
+    //   - createdAt: timestamp (optional)
+    //
+    // Collection: concerns
+    // Document ID: {id}
+    // Fields:
+    //   - id: string (optional, <= 128 chars)
+    //   - ownerUid: string (required, immutable, auth UID)
+    //   - locationId: string (optional/nullable, <= 128 chars)
+    //   - areaDescription: string (required, 1-500 chars)
+    //   - description: string (required, 1-2000 chars)
+    //   - indicators: map (required)
+    //   - observedAt: timestamp (optional/nullable)
+    //   - photoPaths: list (optional, <= 20 strings)
+    //   - createdAt: timestamp (optional, immutable)
+    //
+    // Collection: devices
+    // Document ID: {deviceId}
+    // Fields:
+    //   - deviceId: string (required, <= 128 chars)
+    //   - ownerUid: string (required, immutable, auth UID)
+    //   - name: string (required, 1-100 chars)
+    //   - hardwareModel: string (required, <= 100 chars)
+    //   - firmwareVersion: string (required, <= 50 chars)
+    //   - locationId: string (optional/nullable, <= 128 chars)
+    //   - lastSeenAt: timestamp (optional)
+    //   - updatedAt: timestamp (optional)
+    //   - createdAt: timestamp (optional)
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() <= 100 &&
+        email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      let allowed = ['id', 'name', 'email', 'photoUrl', 'organisation', 'orgType', 'createdAt'];
+      return data.keys().hasOnly(allowed) &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+        isValidEmail(data.email) &&
+        (!('id' in data) || (data.id is string && data.id == request.auth.uid)) &&
+        (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.size() <= 2000)) &&
+        (!('organisation' in data) || data.organisation == null || (data.organisation is string && data.organisation.size() <= 100)) &&
+        (!('orgType' in data) || data.orgType == null || (data.orgType is string && data.orgType.size() <= 50)) &&
+        (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidLocation(data) {
+      let allowed = [
+        'id', 'ownerUid', 'name', 'type', 'address',
+        'lat', 'lng', 'latitude', 'longitude', 'description',
+        'photoPaths', 'managedBy', 'organisationName', 'coverThumb',
+        'createdAt', 'latestPhi', 'latestTier', 'latestAssessmentAt',
+        'sensorNodeId', 'lastAssessedAt'
+      ];
+      return data.keys().hasOnly(allowed) &&
+        data.ownerUid is string && data.ownerUid.size() <= 128 &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+        data.type is string && data.type.size() > 0 && data.type.size() <= 100 &&
+        data.address is string && data.address.size() > 0 && data.address.size() <= 300 &&
+        (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+        (!('lat' in data) || data.lat == null || data.lat is number) &&
+        (!('lng' in data) || data.lng == null || data.lng is number) &&
+        (!('latitude' in data) || data.latitude == null || data.latitude is number) &&
+        (!('longitude' in data) || data.longitude == null || data.longitude is number) &&
+        (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 2000)) &&
+        (!('photoPaths' in data) || (data.photoPaths is list && data.photoPaths.size() <= 20)) &&
+        (!('managedBy' in data) || data.managedBy == null || (data.managedBy is string && data.managedBy.size() <= 50)) &&
+        (!('organisationName' in data) || data.organisationName == null || (data.organisationName is string && data.organisationName.size() <= 100)) &&
+        (!('coverThumb' in data) || data.coverThumb == null || (data.coverThumb is string && data.coverThumb.size() <= 600000)) &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        (!('latestPhi' in data) || data.latestPhi == null || (data.latestPhi is number && data.latestPhi >= 0 && data.latestPhi <= 100)) &&
+        (!('latestTier' in data) || data.latestTier == null || (data.latestTier is string && data.latestTier.size() <= 50)) &&
+        (!('latestAssessmentAt' in data) || data.latestAssessmentAt == null || data.latestAssessmentAt is timestamp) &&
+        (!('sensorNodeId' in data) || data.sensorNodeId == null || (data.sensorNodeId is string && data.sensorNodeId.size() <= 128)) &&
+        (!('lastAssessedAt' in data) || data.lastAssessedAt == null || data.lastAssessedAt is timestamp);
+    }
+
+    function isValidSoilCore(soil) {
+      let percent = soil.get('percent', 0);
+      let raw = soil.get('raw', null);
+      let status = soil.get('status', '');
+      let source = soil.get('source', '');
+      let deviceId = soil.get('deviceId', null);
+      let firmware = soil.get('firmware', null);
+      let capturedAt = soil.get('capturedAt', '');
+      return (percent is number && percent >= 0 && percent <= 100) &&
+        (raw == null || (raw is int && raw >= 0 && raw <= 4095)) &&
+        (status is string && status.size() <= 128) &&
+        (source is string && source.size() <= 128) &&
+        (deviceId == null || (deviceId is string && deviceId.size() <= 128)) &&
+        (firmware == null || (firmware is string && firmware.size() <= 128)) &&
+        soil.get('stable', true) is bool &&
+        (capturedAt is timestamp || (capturedAt is string && capturedAt.size() <= 100)) &&
+        soil.get('capturedLat', 0) is number &&
+        soil.get('capturedLng', 0) is number;
+    }
+
+    function isValidSoilTelemetry(soil) {
+      let moisturePct = soil.get('moisturePct', null);
+      let moistureRaw = soil.get('moistureRaw', null);
+      let condition = soil.get('condition', null);
+      let rssiDbm = soil.get('rssiDbm', null);
+      return (moisturePct == null || (moisturePct is number && moisturePct >= 0 && moisturePct <= 100)) &&
+        (moistureRaw == null || (moistureRaw is int && moistureRaw >= 0 && moistureRaw <= 4095)) &&
+        (condition == null || (condition is string && condition.size() <= 128)) &&
+        soil.get('soilTempC', 0) is number &&
+        soil.get('ambientTempC', 0) is number &&
+        soil.get('humidityPct', 0) is number &&
+        soil.get('heatIndexC', 0) is number &&
+        soil.get('dewPointC', 0) is number &&
+        (rssiDbm == null || (rssiDbm is int && rssiDbm >= -150 && rssiDbm <= 0));
+    }
+
+    function isValidSoil(soil) {
+      let allowed = [
+        'percent', 'raw', 'status', 'source', 'deviceId', 'firmware',
+        'stable', 'capturedAt', 'capturedLat', 'capturedLng', 'moistureRaw',
+        'moisturePct', 'condition', 'soilTempC', 'ambientTempC', 'humidityPct',
+        'heatIndexC', 'dewPointC', 'rssiDbm'
+      ];
+      return soil.keys().hasOnly(allowed) &&
+        isValidSoilCore(soil) &&
+        isValidSoilTelemetry(soil);
+    }
+
+    function isValidAssessmentFields(data) {
+      let visits = data.get('visits', null);
+      let dur = data.get('durationMinutes', 0);
+      let weather = data.get('weather', null);
+      let flowers = data.get('flowers', null);
+      let nesting = data.get('nesting', null);
+      let shelter = data.get('shelter', null);
+      let water = data.get('water', null);
+      let temp = data.get('temperatureC', null);
+      let hum = data.get('humidityPct', null);
+      return (visits == null || (visits is int && visits >= 0 && visits <= 1000)) &&
+        (dur is int && dur >= 0 && dur <= 240) &&
+        (weather == null || (weather is string && weather.size() <= 50)) &&
+        (flowers == null || (flowers is string && flowers.size() <= 50)) &&
+        (nesting == null || (nesting is string && nesting.size() <= 50)) &&
+        (shelter == null || (shelter is string && shelter.size() <= 50)) &&
+        (water == null || (water is string && water.size() <= 50)) &&
+        (temp == null || (temp is number && temp >= -60 && temp <= 80)) &&
+        (hum == null || (hum is number && hum >= 0 && hum <= 100));
+    }
+
+    function isValidAssessmentRisk(data) {
+      let co2 = data.get('co2Ppm', null);
+      let rLvl = data.get('riskLevel', null);
+      let rDesc = data.get('riskDescription', null);
+      let rNotes = data.get('riskNotes', null);
+      let actPath = data.get('activityPhotoPath', null);
+      return (co2 == null || (co2 is number && co2 >= 0 && co2 <= 20000)) &&
+        (rLvl == null || (rLvl is string && rLvl.size() <= 50)) &&
+        (rDesc == null || (rDesc is string && rDesc.size() <= 2000)) &&
+        (rNotes == null || (rNotes is string && rNotes.size() <= 2000)) &&
+        (actPath == null || (actPath is string && actPath.size() <= 500));
+    }
+
+    function isValidAssessment(data) {
+      let allowed = [
+        'id', 'ownerUid', 'locationId', 'status', 'scoringVersion',
+        'activity', 'habitat', 'environment', 'risk',
+        'visits', 'observedAt', 'durationMinutes', 'weather',
+        'flowers', 'nesting', 'shelter', 'water',
+        'temperatureC', 'humidityPct', 'co2Ppm',
+        'riskIndicators', 'riskLevel', 'riskDescription', 'riskObservedAt', 'riskNotes',
+        'activityPhotoPaths', 'activityPhotoPath', 'riskPhotoPaths',
+        'createdAt', 'submittedAt', 'result', 'ai', 'actionsTaken',
+        'soil'
+      ];
+      let id = data.get('id', '');
+      let loc = data.get('locationId', null);
+      let sv = data.get('scoringVersion', '');
+      let actPaths = data.get('activityPhotoPaths', []);
+      let riskPaths = data.get('riskPhotoPaths', []);
+      let soil = data.get('soil', null);
+      return data.keys().hasOnly(allowed) &&
+        data.ownerUid is string && data.ownerUid.size() <= 128 &&
+        data.status in ['draft', 'submitted'] &&
+        id is string && id.size() <= 128 &&
+        (loc == null || (loc is string && loc.size() <= 128)) &&
+        (sv is string && sv.size() <= 50) &&
+        (!('observedAt' in data) || data.observedAt == null || data.observedAt is timestamp) &&
+        (!('riskObservedAt' in data) || data.riskObservedAt == null || data.riskObservedAt is timestamp) &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        (!('submittedAt' in data) || data.submittedAt == null || data.submittedAt is timestamp) &&
+        actPaths is list && actPaths.size() <= 20 &&
+        riskPaths is list && riskPaths.size() <= 20 &&
+        data.get('activity', {}) is map &&
+        data.get('habitat', {}) is map &&
+        data.get('environment', {}) is map &&
+        data.get('risk', {}) is map &&
+        data.get('riskIndicators', {}) is map &&
+        (!('result' in data) || data.result == null || data.result is map) &&
+        (!('ai' in data) || data.ai == null || data.ai is map) &&
+        (!('actionsTaken' in data) || (data.actionsTaken is list && data.actionsTaken.size() <= 50)) &&
+        isValidAssessmentFields(data) &&
+        isValidAssessmentRisk(data) &&
+        (soil == null || (soil is map && isValidSoil(soil)));
+    }
+
+    function isValidAssessmentPhoto(data) {
+      let allowed = ['kind', 'thumbB64', 'width', 'height', 'takenAt', 'storagePath'];
+      return data.keys().hasOnly(allowed) &&
+        data.kind is string && (data.kind == 'activity' || data.kind == 'risk') &&
+        (!('thumbB64' in data) || data.thumbB64 == null || (data.thumbB64 is string && data.thumbB64.size() <= 600000)) &&
+        (!('width' in data) || (data.width is int && data.width >= 0 && data.width <= 4096)) &&
+        (!('height' in data) || (data.height is int && data.height >= 0 && data.height <= 4096)) &&
+        (!('takenAt' in data) || data.takenAt is timestamp) &&
+        (!('storagePath' in data) || data.storagePath == null || (data.storagePath is string && data.storagePath.size() <= 500));
+    }
+
+    function isValidAssessmentAction(data) {
+      let allowed = ['date', 'note', 'createdAt'];
+      return data.keys().hasOnly(allowed) &&
+        data.note is string && data.note.size() > 0 && data.note.size() <= 1000 &&
+        (!('date' in data) || data.date == null || data.date is timestamp) &&
+        (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidPost(data) {
+      let allowed = [
+        'id', 'authorUid', 'authorName', 'authorType', 'category', 'title', 'body',
+        'thumbB64', 'imagePath', 'eventDate', 'eventTime', 'eventPlace',
+        'likeCount', 'commentCount', 'likes', 'comments', 'hidden', 'createdAt'
+      ];
+      return data.keys().hasOnly(allowed) &&
+        data.authorUid is string && data.authorUid.size() <= 128 &&
+        data.authorName is string && data.authorName.size() > 0 && data.authorName.size() <= 100 &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+        data.body is string && data.body.size() <= 5000 &&
+        data.category is string && data.category.size() <= 50 &&
+        (!('authorType' in data) || (data.authorType is string && data.authorType.size() <= 50)) &&
+        (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+        (!('thumbB64' in data) || data.thumbB64 == null || (data.thumbB64 is string && data.thumbB64.size() <= 600000)) &&
+        (!('imagePath' in data) || data.imagePath == null || (data.imagePath is string && data.imagePath.size() <= 500)) &&
+        (!('eventDate' in data) || data.eventDate == null || data.eventDate is timestamp) &&
+        (!('eventTime' in data) || data.eventTime == null || (data.eventTime is string && data.eventTime.size() <= 100)) &&
+        (!('eventPlace' in data) || data.eventPlace == null || (data.eventPlace is string && data.eventPlace.size() <= 200)) &&
+        (!('likeCount' in data) || (data.likeCount is int && data.likeCount >= 0)) &&
+        (!('commentCount' in data) || (data.commentCount is int && data.commentCount >= 0)) &&
+        (!('likes' in data) || (data.likes is int && data.likes >= 0)) &&
+        (!('comments' in data) || (data.comments is int && data.comments >= 0)) &&
+        (!('hidden' in data) || data.hidden is bool) &&
+        (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidConcern(data) {
+      let allowed = [
+        'id', 'ownerUid', 'locationId', 'areaDescription',
+        'indicators', 'description', 'observedAt', 'photoPaths', 'createdAt'
+      ];
+      return data.keys().hasOnly(allowed) &&
+        data.ownerUid is string && data.ownerUid.size() <= 128 &&
+        data.areaDescription is string && data.areaDescription.size() > 0 && data.areaDescription.size() <= 500 &&
+        data.description is string && data.description.size() > 0 && data.description.size() <= 2000 &&
+        data.indicators is map &&
+        (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+        (!('locationId' in data) || data.locationId == null || (data.locationId is string && data.locationId.size() <= 128)) &&
+        (!('observedAt' in data) || data.observedAt == null || data.observedAt is timestamp) &&
+        (!('photoPaths' in data) || (data.photoPaths is list && data.photoPaths.size() <= 20)) &&
+        (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidDevice(data) {
+      let allowed = [
+        'deviceId', 'ownerUid', 'name', 'hardwareModel', 'firmwareVersion',
+        'locationId', 'lastSeenAt', 'updatedAt', 'createdAt'
+      ];
+      return data.keys().hasOnly(allowed) &&
+        !('token' in data) &&
+        !('secret' in data) &&
+        !('pairingToken' in data) &&
+        !('wifiPassword' in data) &&
+        data.deviceId is string && data.deviceId.size() <= 128 &&
+        data.ownerUid is string && data.ownerUid.size() <= 128 &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+        data.hardwareModel is string && data.hardwareModel.size() <= 100 &&
+        data.firmwareVersion is string && data.firmwareVersion.size() <= 50 &&
+        (!('locationId' in data) || data.locationId == null || (data.locationId is string && data.locationId.size() <= 128)) &&
+        (!('lastSeenAt' in data) || data.lastSeenAt is timestamp) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp) &&
+        (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // --- Users ---
+    // User profile documents containing personal information (e.g. email) are private to the owner.
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidUser(request.resource.data);
+      allow update: if isOwner(uid) &&
+        isValidUser(request.resource.data) &&
+        (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+      allow delete: if isOwner(uid);
+    }
+
+    // --- Locations ---
+    // Locations can be browsed by signed-in community members.
+    // Created/deleted by owner. Updates allowed by owner or by system/batch assessment updates.
+    match /locations/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        isValidLocation(request.resource.data);
+      allow update: if signedIn() &&
+        isValidLocation(request.resource.data) &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
+        (
+          resource.data.ownerUid == request.auth.uid ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['latestPhi', 'latestTier', 'latestAssessmentAt', 'lastAssessedAt'])
+        );
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+
+    // --- Assessments ---
+    // Submitted assessments are visible to community members; drafts are owner-only.
+    // Non-existent document get is permitted to prevent Null value error when verifying draft status.
+    match /assessments/{id} {
+      allow get: if signedIn() &&
+        (
+          !exists(/databases/$(db)/documents/assessments/$(id)) ||
+          resource.data.ownerUid == request.auth.uid ||
+          resource.data.status == 'submitted'
+        );
+
+      allow list: if signedIn() &&
+        (resource.data.ownerUid == request.auth.uid || resource.data.status == 'submitted');
+
+      allow create: if signedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        isValidAssessment(request.resource.data);
+
+      allow update: if signedIn() &&
+        resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
+        (
+          resource.data.status == 'draft' ||
+          request.resource.data.status == 'submitted' ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ai', 'actionsTaken'])
+        ) &&
+        isValidAssessment(request.resource.data);
+
+      allow delete: if signedIn() &&
+        resource.data.ownerUid == request.auth.uid &&
+        resource.data.status == 'draft';
+
+      // Photos sub-collection
+      match /photos/{p} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() &&
+          exists(/databases/$(db)/documents/assessments/$(id)) &&
+          get(/databases/$(db)/documents/assessments/$(id)).data.ownerUid == request.auth.uid &&
+          isValidAssessmentPhoto(request.resource.data);
+        allow delete: if signedIn() &&
+          exists(/databases/$(db)/documents/assessments/$(id)) &&
+          get(/databases/$(db)/documents/assessments/$(id)).data.ownerUid == request.auth.uid;
+      }
+
+      // Actions sub-collection
+      match /actions/{a} {
+        allow read: if signedIn();
+        allow create: if signedIn() &&
+          exists(/databases/$(db)/documents/assessments/$(id)) &&
+          get(/databases/$(db)/documents/assessments/$(id)).data.ownerUid == request.auth.uid &&
+          isValidAssessmentAction(request.resource.data);
+        allow update, delete: if signedIn() &&
+          exists(/databases/$(db)/documents/assessments/$(id)) &&
+          get(/databases/$(db)/documents/assessments/$(id)).data.ownerUid == request.auth.uid;
+      }
+    }
+
+    // --- Posts ---
+    // Community feed posts and interactions.
+    // Non-existent document get is permitted to prevent Null value error on missing post checks.
+    match /posts/{id} {
+      allow get: if signedIn() &&
+        (
+          !exists(/databases/$(db)/documents/posts/$(id)) ||
+          (!('hidden' in resource.data) || resource.data.hidden != true)
+        );
+
+      allow list: if signedIn() &&
+        (!('hidden' in resource.data) || resource.data.hidden != true);
+
+      allow create: if signedIn() &&
+        request.resource.data.authorUid == request.auth.uid &&
+        isValidPost(request.resource.data);
+
+      allow update: if signedIn() &&
+        resource.data.authorUid == request.auth.uid &&
+        request.resource.data.authorUid == resource.data.authorUid &&
+        (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
+        isValidPost(request.resource.data);
+
+      allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+
+      // Likes sub-collection
+      match /likes/{uid} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() &&
+          request.auth.uid == uid &&
+          request.resource.data.keys().hasOnly(['createdAt']) &&
+          (!('createdAt' in request.resource.data) || request.resource.data.createdAt is timestamp);
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
+
+      // Reports sub-collection
+      match /reports/{uid} {
+        allow get: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() &&
+          request.auth.uid == uid &&
+          request.resource.data.keys().hasOnly(['reason', 'createdAt']) &&
+          request.resource.data.reason is string &&
+          request.resource.data.reason.size() > 0 &&
+          request.resource.data.reason.size() <= 500 &&
+          (!('createdAt' in request.resource.data) || request.resource.data.createdAt is timestamp);
+      }
+    }
+
+    // --- Concerns ---
+    // Environmental concerns reported by users. Write-once, read-only by reporting owner.
+    // Non-existent document get is permitted to prevent Null value error on non-existent document checks.
+    match /concerns/{id} {
+      allow get: if signedIn() &&
+        (
+          !exists(/databases/$(db)/documents/concerns/$(id)) ||
+          resource.data.ownerUid == request.auth.uid
+        );
+
+      allow list: if signedIn() && resource.data.ownerUid == request.auth.uid;
+
+      allow create: if signedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        isValidConcern(request.resource.data);
+    }
+
+    // --- Devices ---
+    // Hardware sensor devices registered to owners. Private to owner.
+    match /devices/{deviceId} {
+      allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        isValidDevice(request.resource.data);
+      allow update: if signedIn() &&
+        resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        isValidDevice(request.resource.data);
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}
