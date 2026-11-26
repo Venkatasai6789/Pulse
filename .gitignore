@@ -1,0 +1,87 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# OS Generated Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code related
+.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Build Outputs & Binary Releases
+/output/
+*.apk
+*.aab
+*.ipa
+*.app
+
+# Android specific & Local configurations
+/android/local.properties
+**/local.properties
+/android/.gradle/
+**/.gradle/
+/android/.kotlin/
+**/.kotlin/
+/android/.cxx/
+/android/captures/
+/android/app/debug
+/android/app/profile
+/android/app/release
+GeneratedPluginRegistrant.java
+
+# Android Signing, Keystores & Keys
+*.keystore
+*.jks
+key.properties
+**/key.properties
+
+# Environment Variables & Secrets
+.env
+.env.*
+*.env
+
+# Firebase logs & emulator cache
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# PlatformIO ESP32 build outputs & downloaded library cache
+.pio/
+**/.pio/
+.vscode/.browse.c_cpp.db*
