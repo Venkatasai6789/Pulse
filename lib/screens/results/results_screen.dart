@@ -561,8 +561,8 @@ class _ResultsScreenState extends State<ResultsScreen> {
           score: result.environmental,
           statusLabel: scoreBand(result.environmental),
           detail: inputs.soilMoisturePercent != null
-              ? '${_fmt(inputs.temperatureC)} °C · ${_fmt(inputs.humidityPct)} % humidity · ${_fmt(inputs.co2Ppm)} ppm CO₂ · ${_fmt(inputs.soilMoisturePercent!)} % soil${inputs.soil?.source == SoilSource.manual ? " (manual)" : ""}'
-              : '${_fmt(inputs.temperatureC)} °C · ${_fmt(inputs.humidityPct)} % humidity · ${_fmt(inputs.co2Ppm)} ppm CO₂',
+              ? '${_fmt(inputs.temperatureC)} °C · ${_fmt(inputs.humidityPct)} % humidity${_assessment?.climateSource == "esp32_dht11" ? " (DHT11)" : ""} · ${_fmt(inputs.co2Ppm)} ppm CO₂ · ${_fmt(inputs.soilMoisturePercent!)} % soil${inputs.soil?.source == SoilSource.manual ? " (manual)" : ""}'
+              : '${_fmt(inputs.temperatureC)} °C · ${_fmt(inputs.humidityPct)} % humidity${_assessment?.climateSource == "esp32_dht11" ? " (DHT11)" : ""} · ${_fmt(inputs.co2Ppm)} ppm CO₂',
         ),
         const SizedBox(height: 12),
         _buildParameterRow(

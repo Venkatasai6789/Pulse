@@ -349,10 +349,20 @@ class Step5Review extends StatelessWidget {
             _buildSummaryRow(
               'Temperature',
               draft.temperatureC != null ? '${draft.temperatureC} °C' : 'Not entered',
+              caption: draft.climateSource == 'esp32_dht11' && draft.temperatureC != null
+                  ? 'Sensor ${draft.climateDeviceId ?? "Node"} · DHT11${draft.climateCapturedAt != null ? " · ${DateFormat('HH:mm').format(draft.climateCapturedAt!)}" : ""}'
+                  : (draft.climateSource == 'manual' && draft.temperatureC != null
+                      ? 'Entered manually'
+                      : null),
             ),
             _buildSummaryRow(
               'Humidity',
               draft.humidityPct != null ? '${draft.humidityPct} %' : 'Not entered',
+              caption: draft.climateSource == 'esp32_dht11' && draft.humidityPct != null
+                  ? 'Sensor ${draft.climateDeviceId ?? "Node"} · DHT11${draft.climateCapturedAt != null ? " · ${DateFormat('HH:mm').format(draft.climateCapturedAt!)}" : ""}'
+                  : (draft.climateSource == 'manual' && draft.humidityPct != null
+                      ? 'Entered manually'
+                      : null),
             ),
             _buildSummaryRow(
               'CO₂ level',

@@ -64,10 +64,32 @@ GeneratedPluginRegistrant.java
 key.properties
 **/key.properties
 
-# Environment Variables & Secrets
+# Environment Variables, Credentials & Secrets
 .env
 .env.*
 *.env
+*-firebase-adminsdk-*.json
+service-account*.json
+credentials*.json
+*.pem
+*.p12
+*.key
+secrets.h
+**/secrets.h
+
+# Local Runtime Databases, Archives & Temp Clutter
+*.db
+*.sqlite
+*.sqlite3
+*.zip
+*.bak
+*.tmp
+*.orig
+
+# Flutter Ephemeral Generated Files
+.flutter-plugins
+**/flutter/ephemeral/
+**/Flutter/ephemeral/
 
 # Firebase logs & emulator cache
 .firebase/

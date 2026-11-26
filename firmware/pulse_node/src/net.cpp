@@ -22,6 +22,7 @@ void NodeNet::_setupNtp() {
 }
 
 void NodeNet::_setupMdns() {
+  MDNS.end();
   if (MDNS.begin(_mdnsHost)) {
     MDNS.addService("pulse", "tcp", 80);
     MDNS.addServiceTxt(String("pulse"), String("tcp"), String("id"), String(_deviceId));
@@ -67,12 +68,19 @@ void NodeNet::begin() {
   _initDeviceId();
   Serial.printf("[BOOT] DeviceId: %s, SoftAP: %s\n", _deviceId, _apSsid);
 
-  // Set dual mode: AP + STA
+  // Set dual mode AP+STA, disable modem sleep & log IP acquisition events
   WiFi.mode(WIFI_AP_STA);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
   WiFi.setTxPower(WIFI_POWER_19_5dBm);
+  WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) {
+    if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+      WiFi.setSleep(false);
+      Serial.printf("[WIFI] Event GOT_IP: %s (ch=%ld)\n",
+                    WiFi.localIP().toString().c_str(), (long)WiFi.channel());
+    }
+  });
 
   WiFi.softAP(_apSsid, AP_PASSWORD);
   IPAddress apIP(192, 168, 4, 1);

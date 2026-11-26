@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/phi.dart';
 import '../../../core/score_format.dart';
+import '../../../hardware/models/node_connection.dart';
+import '../../../hardware/sensor_node_controller.dart';
 import '../../../models/models.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/widgets.dart';
@@ -32,26 +34,36 @@ class _Step3EnvironmentState extends State<Step3Environment> {
   late final TextEditingController _tempController;
   late final TextEditingController _humidityController;
   late final TextEditingController _co2Controller;
+  late final FocusNode _tempFocus;
+  late final FocusNode _humidityFocus;
+
+  SensorNodeController? _nodeController;
+  bool _manualOverride = false;
+  bool _syncScheduled = false;
 
   String? _tempError;
   String? _humidityError;
   String? _co2Error;
 
+  String _formatNum(double v) =>
+      v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+
   @override
   void initState() {
     super.initState();
+    _tempFocus = FocusNode();
+    _humidityFocus = FocusNode();
+    _manualOverride = widget.draft.climateSource == 'manual' &&
+        (widget.draft.temperatureC != null || widget.draft.humidityPct != null);
+
     _tempController = TextEditingController(
       text: widget.draft.temperatureC != null
-          ? (widget.draft.temperatureC! % 1 == 0
-              ? widget.draft.temperatureC!.toInt().toString()
-              : widget.draft.temperatureC!.toString())
+          ? _formatNum(widget.draft.temperatureC!)
           : '',
     );
     _humidityController = TextEditingController(
       text: widget.draft.humidityPct != null
-          ? (widget.draft.humidityPct! % 1 == 0
-              ? widget.draft.humidityPct!.toInt().toString()
-              : widget.draft.humidityPct!.toString())
+          ? _formatNum(widget.draft.humidityPct!)
           : '',
     );
     _co2Controller = TextEditingController(
@@ -59,31 +71,69 @@ class _Step3EnvironmentState extends State<Step3Environment> {
           ? widget.draft.co2Ppm!.toInt().toString()
           : '',
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _nodeController = context.readSensorNode();
+      _nodeController?.acquire();
+    });
   }
 
   @override
   void didUpdateWidget(covariant Step3Environment oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.draft.temperatureC == null && _tempController.text.isNotEmpty && _tempError == null) {
-      _tempController.clear();
+    if (!_tempFocus.hasFocus) {
+      if (widget.draft.temperatureC == null &&
+          _tempController.text.isNotEmpty &&
+          _tempError == null) {
+        _tempController.clear();
+      } else if (widget.draft.temperatureC != null &&
+          (widget.draft.climateSource == 'esp32_dht11' ||
+              widget.draft.temperatureC != oldWidget.draft.temperatureC)) {
+        final formatted = _formatNum(widget.draft.temperatureC!);
+        if (_tempController.text != formatted) {
+          _tempController.text = formatted;
+          _tempError = null;
+        }
+      }
     }
-    if (widget.draft.humidityPct == null && _humidityController.text.isNotEmpty && _humidityError == null) {
-      _humidityController.clear();
+    if (!_humidityFocus.hasFocus) {
+      if (widget.draft.humidityPct == null &&
+          _humidityController.text.isNotEmpty &&
+          _humidityError == null) {
+        _humidityController.clear();
+      } else if (widget.draft.humidityPct != null &&
+          (widget.draft.climateSource == 'esp32_dht11' ||
+              widget.draft.humidityPct != oldWidget.draft.humidityPct)) {
+        final formatted = _formatNum(widget.draft.humidityPct!);
+        if (_humidityController.text != formatted) {
+          _humidityController.text = formatted;
+          _humidityError = null;
+        }
+      }
     }
-    if (widget.draft.co2Ppm == null && _co2Controller.text.isNotEmpty && _co2Error == null) {
+    if (widget.draft.co2Ppm == null &&
+        _co2Controller.text.isNotEmpty &&
+        _co2Error == null) {
       _co2Controller.clear();
     }
   }
 
   @override
   void dispose() {
+    _tempFocus.dispose();
+    _humidityFocus.dispose();
     _tempController.dispose();
     _humidityController.dispose();
     _co2Controller.dispose();
+    try {
+      _nodeController?.release();
+    } catch (_) {}
     super.dispose();
   }
 
   void _onTempChanged(String val) {
+    _manualOverride = true;
     if (val.trim().isEmpty) {
       setState(() => _tempError = null);
       widget.onDraftChanged(widget.draft.clear('temperatureC'));
@@ -95,11 +145,15 @@ class _Step3EnvironmentState extends State<Step3Environment> {
       widget.onDraftChanged(widget.draft.clear('temperatureC'));
     } else {
       setState(() => _tempError = null);
-      widget.onDraftChanged(widget.draft.copyWith(temperatureC: numVal));
+      widget.onDraftChanged(widget.draft.copyWith(
+        temperatureC: numVal,
+        climateSource: 'manual',
+      ));
     }
   }
 
   void _onHumidityChanged(String val) {
+    _manualOverride = true;
     if (val.trim().isEmpty) {
       setState(() => _humidityError = null);
       widget.onDraftChanged(widget.draft.clear('humidityPct'));
@@ -111,8 +165,33 @@ class _Step3EnvironmentState extends State<Step3Environment> {
       widget.onDraftChanged(widget.draft.clear('humidityPct'));
     } else {
       setState(() => _humidityError = null);
-      widget.onDraftChanged(widget.draft.copyWith(humidityPct: numVal));
+      widget.onDraftChanged(widget.draft.copyWith(
+        humidityPct: numVal,
+        climateSource: 'manual',
+      ));
     }
+  }
+
+  void _resumeLiveDht(SensorNodeController ctrl) {
+    final liveTemp = ctrl.latestTemperatureC;
+    final liveHum = ctrl.latestHumidityPct;
+    if (liveTemp == null || liveHum == null) return;
+    final tRounded = double.parse(liveTemp.toStringAsFixed(1));
+    final hRounded = double.parse(liveHum.toStringAsFixed(1));
+    setState(() {
+      _manualOverride = false;
+      _tempError = null;
+      _humidityError = null;
+      _tempController.text = _formatNum(tRounded);
+      _humidityController.text = _formatNum(hRounded);
+    });
+    widget.onDraftChanged(widget.draft.copyWith(
+      temperatureC: tRounded,
+      humidityPct: hRounded,
+      climateSource: 'esp32_dht11',
+      climateDeviceId: ctrl.node?.deviceId,
+      climateCapturedAt: DateTime.now(),
+    ));
   }
 
   void _onCo2Changed(String val) {
@@ -246,6 +325,56 @@ class _Step3EnvironmentState extends State<Step3Environment> {
     final hasAllThree = t != null && h != null && c != null;
     final score = hasAllThree ? environmentalScore(t, h, c, s) : null;
 
+    final nodeCtrl = context.watchSensorNode();
+    final hasLiveDht = nodeCtrl != null && nodeCtrl.hasLiveDht;
+    final dhtFault = nodeCtrl != null &&
+        (nodeCtrl.state == NodeConnection.online ||
+            nodeCtrl.state == NodeConnection.fault) &&
+        nodeCtrl.latest?.dht != null &&
+        !nodeCtrl.latest!.dht!.sensorOk;
+
+    if (hasLiveDht && !_manualOverride) {
+      final liveTemp =
+          double.parse(nodeCtrl.latestTemperatureC!.toStringAsFixed(1));
+      final liveHum =
+          double.parse(nodeCtrl.latestHumidityPct!.toStringAsFixed(1));
+      final deviceId = nodeCtrl.node?.deviceId;
+      final needsSync = widget.draft.temperatureC != liveTemp ||
+          widget.draft.humidityPct != liveHum ||
+          widget.draft.climateSource != 'esp32_dht11' ||
+          widget.draft.climateDeviceId != deviceId;
+      if (needsSync && !_syncScheduled) {
+        _syncScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _syncScheduled = false;
+          if (!mounted || _manualOverride || !nodeCtrl.hasLiveDht) return;
+          final tNow =
+              double.parse(nodeCtrl.latestTemperatureC!.toStringAsFixed(1));
+          final hNow =
+              double.parse(nodeCtrl.latestHumidityPct!.toStringAsFixed(1));
+          final devNow = nodeCtrl.node?.deviceId;
+          if (!_tempFocus.hasFocus) {
+            _tempController.text = _formatNum(tNow);
+            _tempError = null;
+          }
+          if (!_humidityFocus.hasFocus) {
+            _humidityController.text = _formatNum(hNow);
+            _humidityError = null;
+          }
+          widget.onDraftChanged(widget.draft.copyWith(
+            temperatureC: tNow,
+            humidityPct: hNow,
+            climateSource: 'esp32_dht11',
+            climateDeviceId: devNow,
+            climateCapturedAt: DateTime.now(),
+          ));
+        });
+      }
+    }
+
+    final isLiveDhtActive =
+        hasLiveDht && !_manualOverride && widget.draft.climateSource == 'esp32_dht11';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -275,6 +404,34 @@ class _Step3EnvironmentState extends State<Step3Environment> {
           draft: widget.draft,
           onDraftChanged: widget.onDraftChanged,
         ),
+        if (dhtFault) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.honey.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.honey.withValues(alpha: 0.45)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.sensors_off_rounded,
+                    size: 16, color: Color(0xFFB78103)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'DHT11 sensor not detected on GPIO 32 — enter temperature & humidity manually.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: const Color(0xFFB78103),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
 
         // 1. Temperature Card
@@ -298,29 +455,39 @@ class _Step3EnvironmentState extends State<Step3Environment> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.thermostat_outlined, color: Color(0xFF0288D1), size: 18),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Temperature (°C) *',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.ink,
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(Icons.thermostat_outlined, color: Color(0xFF0288D1), size: 18),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'Temperature (°C) *',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.ink,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                    Text(
-                      '−20 to 60 °C',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.muted),
-                    ),
+                    const SizedBox(width: 8),
+                    if (isLiveDhtActive)
+                      _buildDhtLiveBadge(nodeCtrl.node?.deviceId)
+                    else
+                      Text(
+                        '−20 to 60 °C',
+                        style: GoogleFonts.inter(fontSize: 11, color: AppColors.muted),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _tempController,
+                  focusNode: _tempFocus,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                   decoration: InputDecoration(
                     hintText: 'e.g. 25',
@@ -330,6 +497,26 @@ class _Step3EnvironmentState extends State<Step3Environment> {
                   ),
                   onChanged: _onTempChanged,
                 ),
+                if (hasLiveDht && _manualOverride) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => _resumeLiveDht(nodeCtrl),
+                      icon: const Icon(Icons.sync_rounded, size: 15),
+                      label: Text(
+                        'Use live DHT11 (${nodeCtrl.latestTemperatureC!.toStringAsFixed(1)} °C)',
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.forest,
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                ],
                 if (t != null && _tempError == null) ...[
                   const SizedBox(height: 8),
                   _buildStatusChip(temperatureScore(t), 'Suitable 18–30 °C'),
@@ -362,29 +549,39 @@ class _Step3EnvironmentState extends State<Step3Environment> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.water_drop_outlined, color: Color(0xFF0288D1), size: 18),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Humidity (%) *',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.ink,
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(Icons.water_drop_outlined, color: Color(0xFF0288D1), size: 18),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'Humidity (%) *',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.ink,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                    Text(
-                      '0 to 100 %',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.muted),
-                    ),
+                    const SizedBox(width: 8),
+                    if (isLiveDhtActive)
+                      _buildDhtLiveBadge(nodeCtrl.node?.deviceId)
+                    else
+                      Text(
+                        '0 to 100 %',
+                        style: GoogleFonts.inter(fontSize: 11, color: AppColors.muted),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _humidityController,
+                  focusNode: _humidityFocus,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
                     hintText: 'e.g. 60',
@@ -394,6 +591,26 @@ class _Step3EnvironmentState extends State<Step3Environment> {
                   ),
                   onChanged: _onHumidityChanged,
                 ),
+                if (hasLiveDht && _manualOverride) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => _resumeLiveDht(nodeCtrl),
+                      icon: const Icon(Icons.sync_rounded, size: 15),
+                      label: Text(
+                        'Use live DHT11 (${nodeCtrl.latestHumidityPct!.toStringAsFixed(0)} %)',
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.forest,
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                ],
                 if (h != null && _humidityError == null) ...[
                   const SizedBox(height: 8),
                   _buildStatusChip(humidityScore(h), 'Suitable 50–70%'),
@@ -567,6 +784,42 @@ class _Step3EnvironmentState extends State<Step3Environment> {
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildDhtLiveBadge(String? deviceId) {
+    final suffix = (deviceId != null && deviceId.length >= 4)
+        ? deviceId.substring(deviceId.length - 4)
+        : (deviceId ?? 'DHT11');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.sage.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.leaf.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              color: AppColors.forest,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            'Live DHT11 · $suffix',
+            style: GoogleFonts.inter(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.forest,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

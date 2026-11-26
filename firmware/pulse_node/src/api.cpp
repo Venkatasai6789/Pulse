@@ -1,6 +1,7 @@
 #include "api.h"
 #include "net.h"
 #include "soil_sensor.h"
+#include "dht_sensor.h"
 #include "store.h"
 #include "lcd_ui.h"
 #include "version.h"
@@ -120,12 +121,14 @@ bool NodeApi::_checkAuth() {
 }
 
 void NodeApi::_handleHealth() {
+  const auto& d = Dht.getLatest();
   JsonDocument doc;
   doc["ok"] = true;
   doc["deviceId"] = Net.getDeviceId();
   doc["fw"] = FW_VERSION;
   doc["uptimeS"] = millis() / 1000;
   doc["paired"] = Store.isPaired();
+  doc["hasDht"] = d.sensorOk;
 
   String out;
   serializeJson(doc, out);
@@ -135,6 +138,7 @@ void NodeApi::_handleHealth() {
 void NodeApi::_handleInfo() {
   if (!_checkAuth()) return;
 
+  const auto& d = Dht.getLatest();
   JsonDocument doc;
   doc["deviceId"] = Net.getDeviceId();
   doc["name"] = Net.getFriendlyName();
@@ -145,6 +149,7 @@ void NodeApi::_handleInfo() {
   doc["rssi"] = (int)WiFi.RSSI();
   doc["ssid"] = WiFi.SSID();
   doc["lcdAddr"] = "0x27";
+  doc["hasDht"] = d.sensorOk;
 
   JsonObject cal = doc["calibration"].to<JsonObject>();
   cal["dryRaw"] = Store.getDryRaw();
@@ -162,6 +167,7 @@ void NodeApi::_handleReading() {
   if (!_checkAuth()) return;
 
   const auto& s = Soil.getLatest();
+  const auto& d = Dht.getLatest();
   uint32_t now = millis();
 
   JsonDocument doc;
@@ -179,6 +185,19 @@ void NodeApi::_handleReading() {
   soilObj["stable"] = s.stable;
   soilObj["min30s"] = s.min30s;
   soilObj["max30s"] = s.max30s;
+
+  JsonObject dhtObj = doc["dht"].to<JsonObject>();
+  dhtObj["sensorOk"] = d.sensorOk;
+  dhtObj["ageMs"] = (d.sampleTimeMs > 0) ? (now - d.sampleTimeMs) : 0;
+  if (d.sensorOk) {
+    dhtObj["temperatureC"] = d.temperatureC;
+    dhtObj["humidityPct"] = d.humidityPct;
+    dhtObj["heatIndexC"] = d.heatIndexC;
+  } else {
+    dhtObj["temperatureC"] = nullptr;
+    dhtObj["humidityPct"] = nullptr;
+    dhtObj["heatIndexC"] = nullptr;
+  }
 
   JsonObject netObj = doc["net"].to<JsonObject>();
   netObj["mode"] = (WiFi.status() == WL_CONNECTED) ? "sta" : "ap";
@@ -206,6 +225,19 @@ void NodeApi::_handlePairStart() {
   uint32_t now = millis();
   if (now < _lockoutUntilMs) {
     _sendError(429, "pairingLocked", "Too many wrong PINs. Try again in a minute");
+    return;
+  }
+
+  // Reuse active PIN if already displayed within the last 100s (avoids PIN churn on rapid retries)
+  uint32_t ttlMs = (uint32_t)PAIR_PIN_TTL_S * 1000;
+  if (_pinActive && (now - _pinGeneratedMs < (ttlMs - 20000))) {
+    int remainingS = (int)((ttlMs - (now - _pinGeneratedMs)) / 1000);
+    Lcd.showPairing(_activePin, remainingS);
+    JsonDocument doc;
+    doc["expiresInS"] = remainingS;
+    String out;
+    serializeJson(doc, out);
+    _sendJson(200, out);
     return;
   }
 

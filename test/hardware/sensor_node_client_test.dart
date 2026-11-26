@@ -151,5 +151,45 @@ void main() {
       final token = await client.pairConfirm('192.168.1.50', 80, '654321');
       expect(token, 'abc123token456');
     });
+
+    test('reading parses optional dht payload accurately', () async {
+      final mock = MockClient((request) async {
+        final json = {
+          'seq': 7,
+          'sampleAgeMs': 250,
+          'uptimeS': 120,
+          'soil': {
+            'percent': 55.0,
+            'raw': 1900,
+            'status': 'OPTIMAL',
+            'stable': true,
+            'sensorOk': true,
+          },
+          'dht': {
+            'sensorOk': true,
+            'ageMs': 400,
+            'temperatureC': 27.4,
+            'humidityPct': 62.0,
+            'heatIndexC': 28.1,
+          },
+          'net': {
+            'mode': 'STA',
+            'ssid': 'GardenWifi',
+            'rssi': -58,
+            'ip': '192.168.1.50',
+          },
+        };
+        return http.Response(jsonEncode(json), 200);
+      });
+
+      final client = SensorNodeClient(client: mock);
+      final reading = await client.reading('192.168.1.50', 80);
+
+      expect(reading.hasDht, isTrue);
+      expect(reading.isDhtFresh, isTrue);
+      expect(reading.dht?.temperatureC, 27.4);
+      expect(reading.dht?.humidityPct, 62.0);
+      expect(reading.dht?.heatIndexC, 28.1);
+    });
   });
 }

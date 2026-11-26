@@ -16,7 +16,7 @@
     <img src="https://img.shields.io/badge/Dart-3.12+-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
   </a>
   <a href="https://www.espressif.com/en/products/socs/esp32">
-    <img src="https://img.shields.io/badge/Hardware-ESP32%20%2B%2016x2%20LCD-E7352C?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32 Hardware" />
+    <img src="https://img.shields.io/badge/Hardware-ESP32%20%2B%20Soil%20%2B%20DHT11%20%2B%20LCD-E7352C?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32 Hardware" />
   </a>
   <a href="https://firebase.google.com">
     <img src="https://img.shields.io/badge/Firebase-Auth%20%7C%20Firestore-FFCA28?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Tests-141%20Passing-2E7D32?style=flat-square&logo=checkmarx&logoColor=white" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-144%20Passing-2E7D32?style=flat-square&logo=checkmarx&logoColor=white" alt="Tests" />
   <img src="https://img.shields.io/badge/Analyzer-0%20Issues-2E7D32?style=flat-square" alt="Analyzer" />
   <img src="https://img.shields.io/badge/Storage-SQLite%20%2B%20Firestore-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="Storage" />
   <img src="https://img.shields.io/badge/Firmware-PlatformIO%20Arduino-00979D?style=flat-square&logo=platformio&logoColor=white" alt="PlatformIO" />
@@ -47,7 +47,7 @@
 7. [The Scientific PHI Scoring Engine](#-the-scientific-phi-scoring-engine)
 8. [AI Multimodal Advisory System (Google Gemini)](#-ai-multimodal-advisory-system-google-gemini)
 9. [Backend Architecture & Cloud Ecosystem](#-backend-architecture--cloud-ecosystem)
-10. [Application Gallery](#-application-gallery)
+10. [Application Ecosystem Gallery](#-application-ecosystem-gallery)
 11. [Setup & Execution Guide (App + Firmware)](#-setup--execution-guide-app--firmware)
 12. [Testing & Quality Assurance](#-testing--quality-assurance)
 13. [License](#-license)
@@ -67,7 +67,7 @@ P.U.L.S.E. evaluates ecosystems through a standardized **4-pillar protocol**, de
 | Layer | Technologies & Libraries | Version / Details | Purpose in P.U.L.S.E. |
 | :--- | :--- | :--- | :--- |
 | **Mobile Framework** | [Flutter](https://flutter.dev) & [Dart](https://dart.dev) | SDK `^3.12.2` / Dart `^3.12` | Cross-platform high-performance reactive UI rendering |
-| **IoT Hardware & MCU** | ESP32-D0WD-V3 + Capacitive Soil Probe + 16×2 I2C LCD | PlatformIO / Arduino-ESP32 `3.3.12` | Real-time soil moisture sensing, PIN pairing, and on-device LCD status UI |
+| **IoT Hardware & MCU** | ESP32-D0WD-V3 + Capacitive Soil Probe + DHT11 + 16×2 I2C LCD | PlatformIO / Arduino-ESP32 `3.3.12` | Live soil moisture, ambient temperature & humidity sensing, PIN pairing, and LCD UI |
 | **Discovery & Local LAN** | `multicast_dns`, `wifi_iot`, `Android MulticastLock`, Subnet Probe | LAN + SoftAP (`192.168.4.1`) | Zero-conf mDNS + fast TCP/80 hotspot sweep + direct SoftAP handshake |
 | **State Management** | [Provider](https://pub.dev/packages/provider) | `^6.1.5+1` | Auth state, API scoping, `SensorNodeController` lifecycle & polling |
 | **Routing & Navigation** | [go_router](https://pub.dev/packages/go_router) | `^17.5.0` | Declarative routing with `StatefulShellRoute.indexedStack` |
@@ -81,35 +81,42 @@ P.U.L.S.E. evaluates ecosystems through a standardized **4-pillar protocol**, de
 
 ## 🔌 ESP32 IoT Hardware Node & Firmware
 
-Located under [`firmware/pulse_node/`](firmware/pulse_node/), the P.U.L.S.E. Sensor Node turns an ESP32 DevKit + capacitive soil moisture sensor + 16×2 PCF8574 I2C LCD into a non-blocking, field-deployable Wi-Fi sensor station.
+Located under [`firmware/pulse_node/`](firmware/pulse_node/), the P.U.L.S.E. Sensor Node turns an ESP32 DevKit + capacitive soil moisture sensor + **DHT11 temperature & humidity sensor** + 16×2 PCF8574 I2C LCD into a non-blocking, field-deployable Wi-Fi sensor station.
 
 ### Hardware Pinout
 
 | Peripheral | ESP32 Pin | Notes |
 | :--- | :--- | :--- |
 | **Soil Moisture Probe (A0)** | `GPIO 34` (`ADC1_CH6`) | Input-only ADC1 channel (Wi-Fi safe, 12-bit `0–4095`, `ADC_11db`) |
+| **DHT11 Temp & Humidity (DATA)** | `GPIO 32` | Safe non-strapping bidirectional GPIO; `2000 ms` polling, range & 3-strike fault checks |
 | **16×2 LCD I2C SDA** | `GPIO 21` | Auto-probes `0x27` / `0x3F` (and `0x20–0x3F` scan fallback) |
 | **16×2 LCD I2C SCL** | `GPIO 22` | Custom CGRAM glyphs (drop, Wi-Fi, trend arrows, 5-substep bar) |
 | **User Control Button** | `GPIO 0` (`BOOT`) | Short press: cycle LCD page; 2 s hold: Network IP view; 5 s hold: factory reset |
 
 ### Firmware Architecture & Low-Latency Pipeline
-- **Cooperative Non-Blocking Scheduler ([`main.cpp`](firmware/pulse_node/src/main.cpp)):** Processes WebServer HTTP requests (`Api.loop()`), Wi-Fi supervision (`Net.loop()`), ADC sampling (`400 ms`), button debounce (`20 ms`), and LCD diff-flushing (`250 ms`) without blocking `delay()` loops.
-- **Signal Conditioning ([`soil_sensor.cpp`](firmware/pulse_node/src/soil_sensor.cpp)):**
-  - Burst-reads 12 ADC samples spaced `200 µs` apart (`~2.4 ms` total), discards the 2 lowest/highest outliers (trimmed mean), and applies an adaptive Exponential Moving Average ($\alpha = 0.85$ on large step jumps $> 150$, $\alpha = 0.55$ steady-state) with $2\%$ status hysteresis across 5 soil bands (`DRY`, `LOW`, `OPTIMAL`, `MOIST`, `WET`).
-  - Automatic probe-fault detection when raw ADC rails (`< 50` or `> 4090`).
-- **Low-Latency Wi-Fi & AP+STA Channel Sync ([`net.cpp`](firmware/pulse_node/src/net.cpp)):**
-  - Disables modem sleep (`WiFi.setSleep(false)`), enables max TX power (`19.5 dBm`) and active auto-reconnect, stops the captive portal once STA connects, and locks SoftAP (`PULSE-Node-XXXX`) to `WiFi.channel()` to eliminate radio channel-hopping jitter (**~33–47 ms** HTTP round-trip on LAN).
+- **Cooperative Non-Blocking Scheduler ([`main.cpp`](firmware/pulse_node/src/main.cpp)):** Processes WebServer HTTP requests (`Api.loop()`), Wi-Fi supervision (`Net.loop()`), soil ADC (`400 ms`), DHT11 climate (`2000 ms`), button debounce (`20 ms`), and LCD diff-flushing (`250 ms`) without blocking `delay()` loops.
+- **Signal Conditioning ([`soil_sensor.cpp`](firmware/pulse_node/src/soil_sensor.cpp), [`dht_sensor.cpp`](firmware/pulse_node/src/dht_sensor.cpp)):**
+  - Burst-reads 12 ADC samples spaced `200 µs` apart (`~2.4 ms` total), trims extreme outliers, and applies an adaptive EMA filter with $2\%$ status hysteresis across 5 soil bands (`DRY`, `LOW`, `OPTIMAL`, `MOIST`, `WET`).
+  - Samples DHT11 temperature ($^\circ\text{C}$), relative humidity ($\%$), and heat index every `2 s` with sanity bounds (`-10..60 °C`, `5..100 %`) and `3`-strike sensor-fault detection (`Check GPIO 32` on LCD, `sensorOk: false` in JSON).
+- **Low-Latency Wi-Fi & Seamless Discovery ([`net.cpp`](firmware/pulse_node/src/net.cpp)):**
+  - Disables modem sleep (`WiFi.setSleep(false)` including an explicit `ARDUINO_EVENT_WIFI_STA_GOT_IP` hook), enables max TX power (`19.5 dBm`), cleans up stale mDNS sessions (`MDNS.end()` before `MDNS.begin()`), keeps SoftAP (`PULSE-Node-XXXX`) synced to `WiFi.channel()`, and reuses active pairing PINs instead of rejecting concurrent start taps.
 - **Cryptographic PIN Pairing & Security ([`api.cpp`](firmware/pulse_node/src/api.cpp), [`store.cpp`](firmware/pulse_node/src/store.cpp)):**
   - Random 6-digit PIN displayed on the 16×2 LCD (`120 s` TTL, 5-attempt lockout for `60 s`) generates a 32-char hex bearer token stored locally in NVS (`Preferences`)—never uploaded to Firestore or git.
-  - Exposes CORS-enabled JSON REST endpoints (`/api/health`, `/api/info`, `/api/reading`, `/api/pair/start`, `/api/pair/confirm`, `/api/calibrate`, `/api/display`, `/api/config`, `/api/identify`) with `enableDelay(false)` and RAM-cached NVS calibration/PHI reads.
+  - Exposes CORS-enabled JSON REST endpoints (`/api/health` with `hasDht`, `/api/info`, `/api/reading` with `soil` + `dht` objects, `/api/pair/start`, `/api/pair/confirm`, `/api/calibrate`, `/api/display`, `/api/config`, `/api/identify`) with `enableDelay(false)`.
 
-### Hardware-to-App Communication & LCD Page Rotation
+### Hardware Bench Prototype & Communication Pipeline
+
+<p align="center">
+  <img src="docs/screenshots/hardware_node_bench.jpg" width="540" alt="ESP32 Sensor Node Bench Setup with Soil Probe, DHT11, and 16x2 I2C LCD" /><br>
+  <em>Live ESP32 Field Node Bench Rig: Soil Moisture Probe (GPIO 34), DHT11 Sensor (GPIO 32), and 16×2 I2C LCD displaying real-time moisture alerts (<code>! Soil too dry · 12% Water today</code>) alongside rotating Air Temp/Humidity (<code>PAGE_CLIMATE</code>) and PHI views.</em>
+</p>
 
 ```mermaid
 flowchart LR
-    Probe[Soil Probe ADC GPIO34] -->|400ms Burst + Adaptive EMA| ESP[ESP32 REST API :80]
-    ESP -->|I2C 0x27 Diff Flush| LCD[16x2 LCD Pages: Soil / PHI / Network / Sync]
-    ESP <-->|mDNS + Subnet Scan + Direct SoftAP 192.168.4.1| App[P.U.L.S.E. Flutter App]
+    Probe[Soil Probe GPIO34] -->|400ms Burst + EMA| ESP[ESP32 REST API :80]
+    DHT[DHT11 Sensor GPIO32] -->|2000ms Temp + Hum| ESP
+    ESP -->|I2C 0x27 Diff Flush| LCD[16x2 LCD Pages: Soil / Climate / PHI / Net]
+    ESP <-->|mDNS + Subnet Race + SoftAP 192.168.4.1| App[P.U.L.S.E. Flutter App]
     App -->|600ms Live Stream + X-PULSE-Token| ESP
     App -->|WriteBatch Atomic Sync| Firestore[(Cloud Firestore)]
 ```
@@ -297,6 +304,11 @@ flowchart LR
   - Calls `AuthState.signInWithGoogle()` or `AuthState.signInGuest()`.
   - Traps and maps OAuth exceptions (`network-request-failed`, `user-disabled`, `clientconfigurationerror`) into clear user-friendly notifications.
 
+<p align="center">
+  <img src="docs/screenshots/01_sign_in.jpg" width="230" alt="Welcome and Sign-In Screen" /><br>
+  <em>Welcome & Sign-In Screen (<code>/sign-in</code>) featuring the hero macro photograph, floating brand badge, Google Sign-In, and offline demo access.</em>
+</p>
+
 ---
 
 ### 3. Profile Setup Screen (`/profile-setup`)
@@ -357,6 +369,19 @@ flowchart LR
   - Pulls from `ApiService.getLocations()`, `getAssessments()`, and `getPosts()`.
   - Re-computes real-time averages across all user-managed locations on pull-to-refresh.
 
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="docs/screenshots/02_home_dashboard.jpg" width="230" alt="Home Dashboard RingGauge and KPI Cards" /></td>
+      <td align="center"><img src="docs/screenshots/03_home_locations_params.jpg" width="230" alt="Home Locations Carousel and Four Parameters Breakdown" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>PHI RingGauge, 5-Tier Legend &amp; KPI Grid</strong></td>
+      <td align="center"><strong>Site Carousel &amp; Four Weighted Parameters</strong></td>
+    </tr>
+  </table>
+</div>
+
 ---
 
 ### 6. Monitor / New Assessment Stepper (`/monitor`)
@@ -383,7 +408,10 @@ flowchart LR
   - Validates genuine habitat imagery (flags selfies, pets, cars, indoor photos).
   - Generates 1-tap suggestions with confidence ratings (e.g. `AI suggests Flowers: High (85%) · Apply`).
 
-#### Step 3: Environmental Microclimate & Live Soil Moisture
+#### Step 3: Environmental Microclimate, Live DHT11 & Soil Moisture
+- **Automatic DHT11 Temperature & Humidity Sync (`GPIO 32`):**
+  - When a paired ESP32 node with a connected DHT11 sensor is online, **Temperature ($^\circ\text{C}$)** and **Humidity ($\%$)** auto-populate at `600 ms` UI cadence with **`Live DHT11 · XXXX`** badges, feeding directly into the live PHI preview and **Environmental Score**.
+  - Typing any custom value gracefully pauses auto-sync (`climateSource: 'manual'`), while a 1-tap **"Use live DHT11"** action restores hardware tracking anytime; if the DHT11 wire is absent, a soft GPIO 32 notice prompts manual fallback.
 - **Microclimate Numeric Inputs:**
   - Temperature ($-20^\circ\text{C}$ to $60^\circ\text{C}$)
   - Relative Humidity ($0\%$ to $100\%$)
@@ -408,9 +436,34 @@ flowchart LR
 #### Step 5: Review & PHI Calculation Preview
 - **Live Preview Gauge:** Real-time animated `RingGauge` previewing the calculated score before cloud commit.
 - **Sub-score Mini Badges:** Live cards displaying Activity, Habitat, Environment, and Risk scores.
-- **Section Summary Cards:** Individual recap cards for Steps 1–4 (including captured soil moisture, device ID, and capture time) with thumbnail previews and direct "Edit" jump links.
+- **Section Summary Cards:** Individual recap cards for Steps 1–4 (including captured soil moisture and DHT11 temperature/humidity provenance with device ID and timestamp) with thumbnail previews and direct "Edit" jump links.
 - **Completeness Guard:** Displays `"N Required Fields Remaining"` if incomplete.
 - **Calculate PHI Button:** Disabled until 100% complete. On submit, shows a leaf animation, commits an atomic transaction to Firestore, pushes the latest PHI summary to the paired ESP32 LCD, and routes to Results.
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="docs/screenshots/04_monitor_step1_activity.jpg" width="215" alt="Monitor Step 1 Activity Counter" /></td>
+      <td align="center"><img src="docs/screenshots/05_monitor_step2_habitat.jpg" width="215" alt="Monitor Step 2 Habitat Quality" /></td>
+      <td align="center"><img src="docs/screenshots/06_monitor_step3_dht11_soil.jpg" width="215" alt="Monitor Step 3 Live DHT11 and Soil Telemetry" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Step 1: Activity &amp; 5-Min Timer</strong></td>
+      <td align="center"><strong>Step 2: Habitat Quality</strong></td>
+      <td align="center"><strong>Step 3: Live DHT11 &amp; Soil Sync</strong></td>
+    </tr>
+    <tr>
+      <td align="center"><img src="docs/screenshots/07_monitor_step4_risk.jpg" width="215" alt="Monitor Step 4 Potential Risks" /></td>
+      <td align="center"><img src="docs/screenshots/08_monitor_step5_review.jpg" width="215" alt="Monitor Step 5 Live PHI Preview" /></td>
+      <td align="center"><em>Hardware reads soil (GPIO 34) + air (DHT11 GPIO 32) automatically into Step 3 before calculating PHI.</em></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Step 4: Potential Risks</strong></td>
+      <td align="center"><strong>Step 5: Live PHI Preview</strong></td>
+      <td align="center"></td>
+    </tr>
+  </table>
+</div>
 
 ---
 
@@ -434,6 +487,27 @@ flowchart LR
   - **"What to do next?" Checklist:** Prioritized ecological action items with checkmark icons.
   - **"Record an action taken":** Interactive button opening a bottom sheet to record interventions (e.g. *"Planted lavender and installed water dish"*). Actions are appended to the permanent assessment record.
   - **Navigation Buttons:** Equalized stadium footer actions to export/download report or view location details.
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="docs/screenshots/09_results_phi_gauge.jpg" width="220" alt="Assessment Results PHI Gauge" /></td>
+      <td align="center"><img src="docs/screenshots/10_results_parameters_sensors.jpg" width="220" alt="Parameter Breakdown with DHT11 and Soil" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Animated PHI Gauge &amp; Score Explanation</strong></td>
+      <td align="center"><strong>Four Parameter Cards (Live DHT11 + Soil)</strong></td>
+    </tr>
+    <tr>
+      <td align="center"><img src="docs/screenshots/11_results_ai_insights.jpg" width="220" alt="Gemini AI Ecological Insights" /></td>
+      <td align="center"><img src="docs/screenshots/12_results_phi_trend.jpg" width="220" alt="Location PHI Trend Chart" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Gemini AI Advisory Insights</strong></td>
+      <td align="center"><strong>Longitudinal PHI Trend &amp; Interventions</strong></td>
+    </tr>
+  </table>
+</div>
 
 ---
 
@@ -650,15 +724,24 @@ firestore/
 
 ---
 
-## 📸 Application Gallery
+## 📸 Application Ecosystem Gallery
 
-| Home Dashboard | Field Assessment (Monitor) | Register Location |
-| :---: | :---: | :---: |
-| <img src="designs/01_home.jpg" width="260" alt="Home Dashboard" /> | <img src="designs/02_new_assessment.jpg" width="260" alt="New Assessment" /> | <img src="designs/03_register_location.jpg" width="260" alt="Register Location" /> |
+Real high-resolution captures of the workspace tabs complementing the [Hardware Bench](#-esp32-iot-hardware-node--firmware), [Onboarding & Home](#2-welcome--sign-in-screen-sign-in), [5-Step Assessment](#step-1-pollinator-activity), and [Results & AI Insights](#7-assessment-results--analytics-resultsid) sections above:
 
-| Assessment Results | Animated PHI Gauge | Community Initiatives |
-| :---: | :---: | :---: |
-| <img src="designs/04_results.jpg" width="260" alt="Results Screen" /> | <img src="designs/05_phi_gauge.jpg" width="260" alt="PHI Gauge" /> | <img src="designs/06_community.jpg" width="260" alt="Community Screen" /> |
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="docs/screenshots/13_locations_directory.jpg" width="225" alt="Monitored Locations Directory" /></td>
+      <td align="center"><img src="docs/screenshots/14_community_hub.jpg" width="225" alt="Community Hub and Ecological Concerns" /></td>
+      <td align="center"><img src="docs/screenshots/15_profile_gemini_settings.jpg" width="225" alt="Profile and SQLite Gemini Settings" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Monitored Locations (<code>/locations</code>)</strong></td>
+      <td align="center"><strong>Community Hub (<code>/community</code>)</strong></td>
+      <td align="center"><strong>Profile &amp; SQLite AI Settings (<code>/profile</code>)</strong></td>
+    </tr>
+  </table>
+</div>
 
 ---
 
@@ -713,7 +796,7 @@ firebase deploy --only firestore --project pulse-app-849c6
 
 ## 🧪 Testing & Quality Assurance
 
-P.U.L.S.E. maintains a fully automated suite of **141 passing unit and widget tests** alongside **0 analyzer issues**:
+P.U.L.S.E. maintains a fully automated suite of **144 passing unit and widget tests** alongside **0 analyzer issues**:
 
 ```bash
 flutter analyze lib test
@@ -722,8 +805,8 @@ flutter test
 
 ### Test Suite Breakdown
 - **Core PHI & Soil Scoring (`test/phi_test.dart`, `test/soil_phi_test.dart`):** Tier boundaries, normalization math, temperature/humidity/$\text{CO}_2$/soil cutoffs, `v1` vs `v1.1-soil` weighting, and rounding invariance.
-- **Hardware Layer (`test/hardware/`):** `SensorNodeClient` HTTP error mapping, `SensorDiscovery` mDNS/SoftAP/IP validation, SQLite v2 `sensor_nodes` migrations, and `SensorNodeController` state machine polling/capture.
-- **Hardware UI Widgets (`test/widgets/sensor/`):** `SoilSensorPanel`, `SensorStatusButton`, `FieldSensorCard`, and Step 5 / Results soil integration across `360 dp` and `1.3×` text scale.
+- **Hardware Layer (`test/hardware/`):** `SensorNodeClient` HTTP error & DHT11 payload parsing, `SensorDiscovery` mDNS/SoftAP/IP validation, SQLite v2 `sensor_nodes` migrations, and `SensorNodeController` state machine polling/capture.
+- **Hardware UI Widgets (`test/widgets/sensor/`):** `SoilSensorPanel`, `Step3Environment` DHT11 live auto-sync & manual override (`step3_dht11_test.dart`), `SensorStatusButton`, `FieldSensorCard`, and Step 5 / Results integration across `360 dp` and `1.3×` text scale.
 - **UI Audit Verification (`test/phase_5_ui_audit_test.dart`):** Automated regressions for UI audit items (gauge layout, unified sub-score bands, tier badges, locations screen data).
 - **AI & Firestore (`test/ai_service_test.dart`, `test/ai_service_soil_test.dart`, `test/firestore_api_service_test.dart`):** Gemini fallback cascade, `soilAdvice` schema & parsing, score invariance, and Firestore draft/submit batch flows.
 - **End-to-End Screens (`test/monitor_screen_test.dart`, `test/home_redesign_test.dart`, `test/results_screen_test.dart`, `test/widget_test.dart`):** 5-step assessment flow, observation timer, Home dashboard gauges, and Results charts.

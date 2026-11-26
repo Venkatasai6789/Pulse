@@ -50,11 +50,16 @@ class SensorDiscovery {
   SensorDiscovery({SensorNodeClient? client})
       : _client = client ?? SensorNodeClient();
 
-  /// 1. Discovers nodes on the local Wi-Fi network using mDNS (_pulse._tcp).
+  /// 1. Discovers nodes on the local Wi-Fi network using mDNS (_pulse._tcp) in parallel
+  /// with a concrete IPv4 subnet probe so `.local` resolution gaps never cause pairing errors.
   Future<List<DiscoveredNode>> discoverMdns({
-    Duration timeout = const Duration(seconds: 6),
+    Duration timeout = const Duration(seconds: 4),
   }) async {
     final discovered = <String, DiscoveredNode>{};
+
+    // Run fast TCP/80 subnet probe concurrently so mobile hotspots & `.local`-blocked phones
+    // always obtain verified concrete IPv4 hosts.
+    final subnetFuture = kIsWeb ? Future.value(<DiscoveredNode>[]) : probeSubnet();
 
     // Acquire Android MulticastLock during scan
     if (!kIsWeb && Platform.isAndroid) {
@@ -92,6 +97,18 @@ class SensorDiscovery {
             break;
           }
 
+          // Fallback OS lookup if mDNS A record was missing
+          if (ipv4 == null && srv.target.isNotEmpty) {
+            try {
+              final addrs = await InternetAddress.lookup(srv.target)
+                  .timeout(const Duration(milliseconds: 500));
+              final v4 = addrs
+                  .where((a) => a.type == InternetAddressType.IPv4)
+                  .firstOrNull;
+              ipv4 = v4?.address;
+            } catch (_) {}
+          }
+
           // Read TXT records for metadata
           var fw = '1.0.0';
           var deviceId = '';
@@ -119,14 +136,22 @@ class SensorDiscovery {
             deviceId = srv.target.replaceAll('.local', '');
           }
 
-          discovered[deviceId] = DiscoveredNode(
-            name: nodeName,
-            host: resolvedHost,
-            port: srv.port,
-            deviceId: deviceId,
-            fw: fw,
-            mode: 'sta',
-          );
+          // Only keep immediately reachable nodes (pre-verify /api/health)
+          try {
+            await _client
+                .health(resolvedHost, srv.port)
+                .timeout(const Duration(milliseconds: 900));
+            discovered[deviceId] = DiscoveredNode(
+              name: nodeName,
+              host: resolvedHost,
+              port: srv.port,
+              deviceId: deviceId,
+              fw: fw,
+              mode: 'sta',
+            );
+          } catch (e) {
+            debugPrint('[SensorDiscovery] Skipping unverified mDNS host $resolvedHost: $e');
+          }
         }
       }
     } catch (e) {
@@ -142,13 +167,17 @@ class SensorDiscovery {
       }
     }
 
-    // If mDNS found nothing (e.g. mobile hotspot where multicast DNS is filtered by Android OS),
-    // automatically run a fast subnet and SoftAP probe
-    if (discovered.isEmpty && !kIsWeb) {
-      final subnetNodes = await probeSubnet();
+    // Merge concrete IPv4 subnet results (prefer concrete IPv4 over `.local` if both exist)
+    try {
+      final subnetNodes = await subnetFuture;
       for (final n in subnetNodes) {
-        discovered[n.deviceId] = n;
+        final existing = discovered[n.deviceId];
+        if (existing == null || !RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(existing.host)) {
+          discovered[n.deviceId] = n;
+        }
       }
+    } catch (e) {
+      debugPrint('[SensorDiscovery] Subnet merge error: $e');
     }
 
     return discovered.values.toList();

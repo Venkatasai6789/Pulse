@@ -441,6 +441,9 @@ class FirestoreApiService implements ApiService {
       humidityPct: a.humidityPct,
       co2Ppm: a.co2Ppm,
       soil: a.soil,
+      climateSource: a.climateSource,
+      climateDeviceId: a.climateDeviceId,
+      climateCapturedAt: a.climateCapturedAt,
       riskIndicators: a.riskIndicators,
       riskLevel: a.riskLevel,
       riskDescription: a.riskDescription,
@@ -473,6 +476,9 @@ class FirestoreApiService implements ApiService {
       'humidityPct': a.humidityPct,
       'co2Ppm': a.co2Ppm,
       if (a.soil != null) 'soil': a.soil!.toJson(),
+      if (a.climateSource != null) 'climateSource': a.climateSource,
+      if (a.climateDeviceId != null) 'climateDeviceId': a.climateDeviceId,
+      if (a.climateCapturedAt != null) 'climateCapturedAt': _fromDateTime(a.climateCapturedAt),
     };
     final risk = {
       'indicators': a.riskIndicators.toJson(),
@@ -562,6 +568,9 @@ class FirestoreApiService implements ApiService {
       humidityPct: (environment['humidityPct'] ?? d['humidityPct'] as num?)?.toDouble(),
       co2Ppm: (environment['co2Ppm'] ?? d['co2Ppm'] as num?)?.toDouble(),
       soil: soil,
+      climateSource: environment['climateSource'] as String?,
+      climateDeviceId: environment['climateDeviceId'] as String?,
+      climateCapturedAt: _toDateTime(environment['climateCapturedAt']),
       riskIndicators: RiskIndicators.fromJson(
         Map<String, dynamic>.from(risk['indicators'] ?? d['riskIndicators'] ?? {}),
       ),

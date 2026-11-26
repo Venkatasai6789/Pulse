@@ -181,6 +181,7 @@ class _SensorPairingScreenState extends State<SensorPairingScreen> {
   }
 
   Future<void> _onSelectNode(DiscoveredNode node) async {
+    if (_isPairing) return;
     setState(() {
       _selectedNode = node;
       _isPairing = true;
@@ -188,8 +189,23 @@ class _SensorPairingScreenState extends State<SensorPairingScreen> {
     });
 
     try {
-      final startRes = await _client.pairStart(node.host, node.port);
-      final ttl = (startRes['ttlS'] as num?)?.toInt() ?? 120;
+      Map<String, dynamic> startRes;
+      try {
+        startRes = await _client.pairStart(node.host, node.port);
+      } catch (firstErr) {
+        // Automatic single-flight recovery: re-probe subnet by deviceId in case IP changed
+        final candidates = await _discovery.probeSubnet();
+        final refreshed = candidates
+            .where((c) => c.deviceId == node.deviceId || c.host == node.host)
+            .firstOrNull;
+        if (refreshed == null) rethrow;
+        node = refreshed;
+        if (mounted) setState(() => _selectedNode = refreshed);
+        startRes = await _client.pairStart(refreshed.host, refreshed.port);
+      }
+      final ttl = (startRes['ttlS'] as num?)?.toInt() ??
+          (startRes['expiresInS'] as num?)?.toInt() ??
+          120;
       if (!mounted) return;
 
       setState(() {
@@ -203,7 +219,7 @@ class _SensorPairingScreenState extends State<SensorPairingScreen> {
       if (!mounted) return;
       setState(() => _isPairing = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to initiate pairing: $e')),
+        SnackBar(content: Text('Failed to initiate pairing at ${node.host}: $e')),
       );
     }
   }
@@ -331,6 +347,7 @@ class _SensorPairingScreenState extends State<SensorPairingScreen> {
               _scanError = null;
             });
             if (_method == DiscoveryMethod.sameWifi) {
+              _discovery.releaseSoftAp();
               _startWifiScan();
             }
           },
@@ -414,9 +431,15 @@ class _SensorPairingScreenState extends State<SensorPairingScreen> {
                     n.name,
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  subtitle: Text('${n.deviceId} · fw ${n.fw}'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _onSelectNode(n),
+                  subtitle: Text('${n.host} · ${n.deviceId} · fw ${n.fw}'),
+                  trailing: (_isPairing && _selectedNode?.host == n.host)
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.chevron_right),
+                  onTap: _isPairing ? null : () => _onSelectNode(n),
                 ),
               ),
             ),

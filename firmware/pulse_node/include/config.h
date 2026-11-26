@@ -5,6 +5,8 @@
 // Pin Definitions
 // -----------------------------------------------------------------------------
 #define PIN_SOIL 34       // ADC1_CH6, input only, Wi-Fi safe
+#define PIN_DHT  32       // Non-strapping bidirectional GPIO, safe for DHT11 1-wire
+#define DHT_TYPE 11       // DHT11 sensor model
 #define PIN_SDA  21       // I2C Data
 #define PIN_SCL  22       // I2C Clock
 #define PIN_BTN  0        // BOOT button
@@ -20,6 +22,7 @@
 // Timing Constants (milliseconds / seconds)
 // -----------------------------------------------------------------------------
 #define SAMPLE_INTERVAL_MS   400
+#define DHT_INTERVAL_MS      2000
 #define PAGE_MS              4000
 #define LCD_TICK_MS          250
 #define WIFI_CHECK_MS        5000

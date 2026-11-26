@@ -543,8 +543,11 @@ class AiService {
     buffer.writeln('Nesting: ${assessment.nesting?.name ?? "N/A"}');
     buffer.writeln('Shelter: ${assessment.shelter?.name ?? "N/A"}');
     buffer.writeln('Water: ${assessment.water?.name ?? "N/A"}');
-    buffer.writeln('Temperature: ${assessment.temperatureC ?? "N/A"}°C');
-    buffer.writeln('Humidity: ${assessment.humidityPct ?? "N/A"}%');
+    final dhtNote = assessment.climateSource == 'esp32_dht11'
+        ? ' (live ESP32 DHT11${assessment.climateDeviceId != null ? " sensor ${assessment.climateDeviceId}" : ""})'
+        : '';
+    buffer.writeln('Temperature: ${assessment.temperatureC ?? "N/A"}°C$dhtNote');
+    buffer.writeln('Humidity: ${assessment.humidityPct ?? "N/A"}%$dhtNote');
     buffer.writeln('CO2: ${assessment.co2Ppm ?? "N/A"} ppm');
     if (assessment.soil != null) {
       final s = assessment.soil!;

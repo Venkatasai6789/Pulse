@@ -45,6 +45,16 @@ class SensorNodeController extends ChangeNotifier {
   DateTime? get lastUpdated => _lastUpdated;
   bool get hasActiveNode => _node != null;
 
+  bool get hasLiveDht =>
+      (_state == NodeConnection.online || _state == NodeConnection.stale) &&
+      (_latest?.hasDht ?? false);
+
+  double? get latestTemperatureC =>
+      hasLiveDht ? _latest?.dht?.temperatureC : null;
+
+  double? get latestHumidityPct =>
+      hasLiveDht ? _latest?.dht?.humidityPct : null;
+
   Future<void> _init() async {
     _node = await _repo.getActiveNode();
     if (_node != null) {

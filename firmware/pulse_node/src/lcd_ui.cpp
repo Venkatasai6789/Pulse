@@ -1,5 +1,6 @@
 #include "lcd_ui.h"
 #include "soil_sensor.h"
+#include "dht_sensor.h"
 #include "store.h"
 #include "version.h"
 #include <Wire.h>
@@ -229,8 +230,7 @@ void LcdUI::nextRotationPage() {
   }
   _activeAlert = ALERT_NONE;
 
-  // Rotation rule: SOIL alternates with every other page:
-  // SOIL -> LAST PHI -> SOIL -> LOCATION -> SOIL -> NETWORK -> SOIL -> SYSTEM -> repeat
+  // Rotation rule: SOIL alternates with CLIMATE, LAST_PHI, LOCATION, NETWORK, SYSTEM:
   if (!_rotationToggleSoil) {
     _currentPage = PAGE_SOIL;
     _rotationToggleSoil = true;
@@ -240,6 +240,10 @@ void LcdUI::nextRotationPage() {
 
     switch (_lastRotationPage) {
       case PAGE_SYSTEM:
+        _currentPage = PAGE_CLIMATE;
+        _lastRotationPage = PAGE_CLIMATE;
+        break;
+      case PAGE_CLIMATE:
         _currentPage = PAGE_LAST_PHI;
         _lastRotationPage = PAGE_LAST_PHI;
         break;
@@ -261,8 +265,8 @@ void LcdUI::nextRotationPage() {
         _lastRotationPage = PAGE_SYSTEM;
         break;
       default:
-        _currentPage = PAGE_LAST_PHI;
-        _lastRotationPage = PAGE_LAST_PHI;
+        _currentPage = PAGE_CLIMATE;
+        _lastRotationPage = PAGE_CLIMATE;
         break;
     }
   }
@@ -454,6 +458,30 @@ void LcdUI::_renderCurrentPage() {
       break;
     }
 
+    case PAGE_CLIMATE: {
+      const auto& d = Dht.getLatest();
+      if (d.sensorOk) {
+        char rightTemp[10];
+        snprintf(rightTemp, sizeof(rightTemp), "%.1fC", d.temperatureC);
+        fmtLine("Temp", rightTemp, _buf[0]);
+
+        char leftHum[12];
+        snprintf(leftHum, sizeof(leftHum), "Hum %d%%", (int)roundf(d.humidityPct));
+        const char* cond = (d.temperatureC >= 18.0f && d.temperatureC <= 30.0f &&
+                            d.humidityPct >= 50.0f && d.humidityPct <= 70.0f)
+                               ? "IDEAL"
+                               : ((d.temperatureC < 15.0f || d.temperatureC > 34.0f ||
+                                   d.humidityPct < 35.0f || d.humidityPct > 85.0f)
+                                      ? "STRES"
+                                      : "MOD");
+        fmtLine(leftHum, cond, _buf[1]);
+      } else {
+        fmtLine("Temp / Hum", "--", _buf[0]);
+        fmtLine("Check GPIO 32", "", _buf[1]);
+      }
+      break;
+    }
+
     case PAGE_LAST_PHI: {
       PhiRecord phi;
       if (Store.getLatestPhi(phi)) {
@@ -538,9 +566,10 @@ void LcdUI::tick() {
   uint32_t now = millis();
 
   // If in normal rotation, check if it's time to advance page
-  if (_currentPage == PAGE_SOIL || _currentPage == PAGE_LAST_PHI ||
-      _currentPage == PAGE_LOCATION || _currentPage == PAGE_NETWORK ||
-      _currentPage == PAGE_SYSTEM || _currentPage == PAGE_ALERT) {
+  if (_currentPage == PAGE_SOIL || _currentPage == PAGE_CLIMATE ||
+      _currentPage == PAGE_LAST_PHI || _currentPage == PAGE_LOCATION ||
+      _currentPage == PAGE_NETWORK || _currentPage == PAGE_SYSTEM ||
+      _currentPage == PAGE_ALERT) {
     if (now >= _pageSwitchMs) {
       nextRotationPage();
     }
@@ -589,6 +618,11 @@ void LcdUI::runSelfTest() {
   char barLine[17];
   snprintf(barLine, sizeof(barLine), "%s %5s", bar, "IDEAL");
   fmtLine(barLine, "", line2);
+  Serial.printf("|%s|\n|%s|\n\n", line1, line2);
+
+  // 5b. Page CLIMATE (DHT11)
+  fmtLine("Temp", "27.4C", line1);
+  fmtLine("Hum 62%", "IDEAL", line2);
   Serial.printf("|%s|\n|%s|\n\n", line1, line2);
 
   // 6. Page LAST PHI (with PHI and without PHI)

@@ -279,6 +279,9 @@ class Assessment {
   final double? humidityPct;
   final double? co2Ppm;
   final SoilReading? soil;
+  final String? climateSource; // 'esp32_dht11' | 'manual'
+  final String? climateDeviceId;
+  final DateTime? climateCapturedAt;
 
   // D. Risk
   final RiskIndicators riskIndicators;
@@ -315,6 +318,9 @@ class Assessment {
     this.humidityPct,
     this.co2Ppm,
     this.soil,
+    this.climateSource,
+    this.climateDeviceId,
+    this.climateCapturedAt,
     this.riskIndicators = const RiskIndicators(),
     this.riskLevel,
     this.riskDescription,
@@ -389,6 +395,9 @@ class Assessment {
     double? humidityPct,
     double? co2Ppm,
     SoilReading? soil,
+    String? climateSource,
+    String? climateDeviceId,
+    DateTime? climateCapturedAt,
     RiskIndicators? riskIndicators,
     RiskLevel? riskLevel,
     String? riskDescription,
@@ -420,6 +429,9 @@ class Assessment {
         humidityPct: humidityPct ?? this.humidityPct,
         co2Ppm: co2Ppm ?? this.co2Ppm,
         soil: soil ?? this.soil,
+        climateSource: climateSource ?? this.climateSource,
+        climateDeviceId: climateDeviceId ?? this.climateDeviceId,
+        climateCapturedAt: climateCapturedAt ?? this.climateCapturedAt,
         riskIndicators: riskIndicators ?? this.riskIndicators,
         riskLevel: riskLevel ?? this.riskLevel,
         riskDescription: riskDescription ?? this.riskDescription,
@@ -447,6 +459,13 @@ class Assessment {
     } else {
       assert(j.containsKey(field), 'Unknown field $field');
       j[field] = null;
+      if ((field == 'temperatureC' || field == 'humidityPct') &&
+          j['temperatureC'] == null &&
+          j['humidityPct'] == null) {
+        j['climateSource'] = null;
+        j['climateDeviceId'] = null;
+        j['climateCapturedAt'] = null;
+      }
     }
     return Assessment.fromJson(j);
   }
@@ -469,6 +488,9 @@ class Assessment {
         'humidityPct': humidityPct,
         'co2Ppm': co2Ppm,
         if (soil != null) 'soil': soil!.toJson(),
+        'climateSource': climateSource,
+        'climateDeviceId': climateDeviceId,
+        'climateCapturedAt': climateCapturedAt?.toIso8601String(),
         'riskIndicators': riskIndicators.toJson(),
         'riskLevel': riskLevel?.name,
         'riskDescription': riskDescription,
@@ -508,6 +530,9 @@ class Assessment {
         soil: j['soil'] != null
             ? SoilReading.fromJson(Map<String, dynamic>.from(j['soil'] as Map))
             : null,
+        climateSource: j['climateSource'] as String?,
+        climateDeviceId: j['climateDeviceId'] as String?,
+        climateCapturedAt: _date(j['climateCapturedAt']),
         riskIndicators: RiskIndicators.fromJson(j['riskIndicators']),
         riskLevel: _enum(RiskLevel.values, j['riskLevel']),
         riskDescription: j['riskDescription'],

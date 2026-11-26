@@ -7,6 +7,7 @@ class NodeReading {
   final int sampleAgeMs;
   final int uptimeS;
   final NodeSoilData soil;
+  final NodeDhtData? dht;
   final NodeNetData net;
   final NodeLastPhiData? lastPhi;
   final DateTime receivedAt;
@@ -16,6 +17,7 @@ class NodeReading {
     required this.sampleAgeMs,
     required this.uptimeS,
     required this.soil,
+    this.dht,
     required this.net,
     this.lastPhi,
     DateTime? receivedAt,
@@ -26,6 +28,16 @@ class NodeReading {
 
   /// Sensor is healthy and producing valid analog reads.
   bool get isSensorOk => soil.sensorOk;
+
+  /// True when a healthy DHT11 reading is present in telemetry.
+  bool get hasDht =>
+      dht != null &&
+      dht!.sensorOk &&
+      dht!.temperatureC != null &&
+      dht!.humidityPct != null;
+
+  /// DHT11 reading freshness check (< 15 seconds).
+  bool get isDhtFresh => (dht?.ageMs ?? sampleAgeMs) < 15000;
 
   /// Converts this reading into a core [SoilReading] model for assessment input.
   SoilReading toSoilReading({
@@ -56,6 +68,9 @@ class NodeReading {
       soil: NodeSoilData.fromJson(
         json['soil'] is Map<String, dynamic> ? json['soil'] as Map<String, dynamic> : {},
       ),
+      dht: json['dht'] is Map<String, dynamic>
+          ? NodeDhtData.fromJson(json['dht'] as Map<String, dynamic>)
+          : null,
       net: NodeNetData.fromJson(
         json['net'] is Map<String, dynamic> ? json['net'] as Map<String, dynamic> : {},
       ),
@@ -63,6 +78,32 @@ class NodeReading {
           ? NodeLastPhiData.fromJson(json['lastPhi'] as Map<String, dynamic>)
           : null,
       receivedAt: DateTime.now(),
+    );
+  }
+}
+
+class NodeDhtData {
+  final double? temperatureC;
+  final double? humidityPct;
+  final double? heatIndexC;
+  final bool sensorOk;
+  final int ageMs;
+
+  const NodeDhtData({
+    this.temperatureC,
+    this.humidityPct,
+    this.heatIndexC,
+    required this.sensorOk,
+    this.ageMs = 0,
+  });
+
+  factory NodeDhtData.fromJson(Map<String, dynamic> json) {
+    return NodeDhtData(
+      temperatureC: (json['temperatureC'] as num?)?.toDouble(),
+      humidityPct: (json['humidityPct'] as num?)?.toDouble(),
+      heatIndexC: (json['heatIndexC'] as num?)?.toDouble(),
+      sensorOk: json['sensorOk'] as bool? ?? false,
+      ageMs: (json['ageMs'] as num?)?.toInt() ?? 0,
     );
   }
 }

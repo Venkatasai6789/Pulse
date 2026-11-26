@@ -3,12 +3,14 @@
 #include "version.h"
 #include "store.h"
 #include "soil_sensor.h"
+#include "dht_sensor.h"
 #include "button.h"
 #include "lcd_ui.h"
 #include "net.h"
 #include "api.h"
 
 static uint32_t lastSampleMs = 0;
+static uint32_t lastDhtMs = 0;
 static uint32_t lastLcdTickMs = 0;
 static uint32_t lastBtnPollMs = 0;
 static uint32_t lastSoilLogMs = 0;
@@ -34,8 +36,10 @@ void setup() {
   // Print LCD Self-Test output to serial for width/layout verification
   Lcd.runSelfTest();
 
-  // Initialize Soil ADC sensor
+  // Initialize Soil ADC sensor & DHT11 climate sensor
   Soil.begin();
+  Dht.begin();
+  Dht.sample(); // Initial sample on boot
 
   // Initialize User Button
   Button.begin();
@@ -91,7 +95,7 @@ void loop() {
     }
   }
 
-  // 4. Soil Sampling (~2000 ms)
+  // 4. Soil Sampling (~400 ms)
   if (now - lastSampleMs >= SAMPLE_INTERVAL_MS) {
     lastSampleMs = now;
     Soil.sample();
@@ -107,12 +111,20 @@ void loop() {
     }
   }
 
-  // 5. Periodic Soil Serial Log (~10 s)
+  // 4b. DHT11 Temperature & Humidity Sampling (~2000 ms)
+  if (now - lastDhtMs >= DHT_INTERVAL_MS) {
+    lastDhtMs = now;
+    Dht.sample();
+  }
+
+  // 5. Periodic Soil + Climate Serial Log (~10 s)
   if (now - lastSoilLogMs >= 10000) {
     lastSoilLogMs = now;
     const auto& s = Soil.getLatest();
-    Serial.printf("[SOIL] raw=%d pct=%d status=%s stable=%d ok=%d\n",
-                  s.raw, s.percent, s.statusCode, s.stable ? 1 : 0, s.sensorOk ? 1 : 0);
+    const auto& d = Dht.getLatest();
+    Serial.printf("[SOIL] raw=%d pct=%d status=%s ok=%d | [DHT] T=%.1fC H=%.1f%% ok=%d\n",
+                  s.raw, s.percent, s.statusCode, s.sensorOk ? 1 : 0,
+                  d.temperatureC, d.humidityPct, d.sensorOk ? 1 : 0);
   }
 
   // 6. LCD Tick (~250 ms)

@@ -258,6 +258,11 @@ class _FieldSensorSettingsCardState extends State<FieldSensorSettingsCard> {
               // Telemetry rows
               _buildRow('Network', '${controller.latest?.net.ssid ?? (node.mode == "ap" ? "Direct AP" : "Wi-Fi")} · ${node.host}'),
               _buildRow('Signal', '${controller.latest?.net.rssi ?? -60} dBm'),
+              if (controller.hasLiveDht)
+                _buildRow(
+                  'Air (DHT11)',
+                  '${controller.latestTemperatureC!.toStringAsFixed(1)} °C · ${controller.latestHumidityPct!.toStringAsFixed(0)} %',
+                ),
               _buildRow('Linked location', node.linkedLocationName ?? 'None'),
               _buildRow('Calibration', 'dry ${node.dryRaw ?? 3200} · wet ${node.wetRaw ?? 1500}'),
 
@@ -270,6 +275,15 @@ class _FieldSensorSettingsCardState extends State<FieldSensorSettingsCard> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  if (state == NodeConnection.unauthorized)
+                    FilledButton.icon(
+                      onPressed: () => context.push('/sensor/pair'),
+                      icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
+                      label: const Text('Re-pair now'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.alert,
+                      ),
+                    ),
                   OutlinedButton.icon(
                     onPressed: _isTesting ? null : _testConnection,
                     icon: _isTesting
